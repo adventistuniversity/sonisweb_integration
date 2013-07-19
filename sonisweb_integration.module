@@ -160,6 +160,13 @@ function sonisweb_integration_admin_settings_validate($form, &$form_state) {
   if (!_sonisweb_integration_test('api', $form_state['values']['sonisweb_integration_soap_base_url'], $form_state['values']['sonisweb_integration_admin_user'], $pass) || !_sonisweb_integration_test('api', $form_state['values']['sonisweb_integration_soap_base_url'], $form_state['values']['sonisweb_integration_admin_user'], $pass)) {
       form_set_error('sonisweb_integration_soap_base_url', t('The Base URL provided is not functioning.  (Is the account enabled and the Base URL correct?)'));
   }
+
+  // Validate that Sonis is available
+  if ($form_state['values']['sonisweb_integration_availability'] == 'on') {
+    if(!sonisweb_integration_test_sql()) {
+      form_set_error('sonisweb_integration_availability', t('Sonis is not currently available. '));
+    }
+  }
 }
 
 /**
@@ -167,15 +174,7 @@ function sonisweb_integration_admin_settings_validate($form, &$form_state) {
  */
 function sonisweb_integration_admin_settings_submit($form, &$form_state) {
   variable_set('sonisweb_integration_caching_length', $form_state['values']['sonisweb_integration_caching_length']);
-
-  if ($form_state['values']['sonisweb_integration_availability'] == 'on') {
-    // Before we turn API calls back on, check to make sure Sonis is up 
-    sonisweb_integration_check_availability();
-    variable_set('sonisweb_integration_availability', $form_state['values']['sonisweb_integration_availability']);
-  }
-  else {
-    variable_set('sonisweb_integration_availability', $form_state['values']['sonisweb_integration_availability']);
-  }
+  variable_set('sonisweb_integration_availability', $form_state['values']['sonisweb_integration_availability']);
 
   if (strripos($form_state['values']['sonisweb_integration_soap_base_url'], "/") != strlen($form_state['values']['sonisweb_integration_soap_base_url']) - 1) {
     $form_state['values']['sonisweb_integration_soap_base_url'] .= "/";
@@ -395,11 +394,23 @@ function sonisweb_integration_sql_to_options($results, $code = '', $display = ''
   }
 }
 
-function sonisweb_integration_check_availability() {
+/**
+ * Tests the availability of Sonis by running a simple SQL query.
+ *
+ * @return
+ *   Boolean indicating whether the test is successful or not.
+ */
+
+function sonisweb_integration_test_sql() {
   // Make a simple test sql call to check the availability of Sonis
-  _sonisweb_integration_test('sql', variable_get('sonisweb_integration_soap_base_url'), 
-                                    variable_get('sonisweb_integration_admin_user'),
-                                    variable_get('sonisweb_integration_admin_password'));
+  if(_sonisweb_integration_test('sql', variable_get('sonisweb_integration_soap_base_url'), 
+                                       variable_get('sonisweb_integration_admin_user'),
+                                       variable_get('sonisweb_integration_admin_password'))) {
+    return TRUE; 
+  }
+  else {
+    return FALSE;
+  }
 }
 
 /* -----------------------------------------------------------------------------
@@ -423,12 +434,11 @@ function _sonisweb_integration_test($type, $url, $user, $pass) {
   }
   if ($type == 'api') {
     $result = _sonisweb_integration_make_soap_call(FALSE, 'apiTest', array(
-      array('sonis_ds', "#sonis.ds#"),
-      array('allow_blank', 'Yes'),
-      array('multi_select', 'no'),
-      array('hide', 'no'),
-      array('hide_excludes', 'no'),
-    ), "CFC.drp_box", "program", "no", $url, $user, $pass);
+                                                   array('sonis_ds', "#sonis.ds#"),
+                                                   array('allow_blank', 'Yes'),
+                                                   array('multi_select', 'no'),
+                                                   array('hide', 'no'),
+                                                   array('hide_excludes', 'no')), "CFC.drp_box", "program", "no", $url, $user, $pass);
     if (stripos($result, 'name="prg_cod"') === FALSE) {
       return FALSE;
     }
@@ -438,7 +448,7 @@ function _sonisweb_integration_test($type, $url, $user, $pass) {
   }
   elseif ($type == 'sql') {
     $result = _sonisweb_integration_make_soap_call(FALSE, 'sqlTest', "select top 1 soc_sec from name", "", "", "", $url, $user, $pass);
-    if (!isset($result->data)) {
+    if (!isset($result->data)) {      
       return FALSE;
     }
     else {
@@ -485,7 +495,10 @@ function _sonisweb_integration_setup_soap($call_type, $turl = '') {
  * Private function.  Do not use!
  */
 function _sonisweb_integration_make_soap_call($use_cached = TRUE, $callType, $sql_or_argumentdata, $component = '', $method = '', $hasReturnVariable = '', $url = '', $username = '', $password = '') {
+
   $cache_len_in_seconds = variable_get('sonisweb_integration_caching_length', '0');
+  $availability = variable_get('sonisweb_integration_availability');
+
   //If caching is turned on load cached values
   if ($cache_len_in_seconds > 0) {
     static $cache_values;
@@ -496,9 +509,8 @@ function _sonisweb_integration_make_soap_call($use_cached = TRUE, $callType, $sq
       cache_clear_all(NULL, "cache_sonisweb_integration");
       //Get the item from cache if is there.
       $tmp = cache_get($index, 'cache_sonisweb_integration');
-      if (isset($tmp->data) && $tmp->data != "") {
+      if (isset($tmp->data) && $tmp->data != "")
         $cache_values[$index] = $tmp->data;
-      }
     }
   }
   //If not cached or caching disabled make the call.
@@ -512,48 +524,49 @@ function _sonisweb_integration_make_soap_call($use_cached = TRUE, $callType, $sq
           $soap = _sonisweb_integration_setup_soap('api');
         }
         if ($soap) {
-          $availability = variable_get('sonisweb_integration_availability');
+          // If call type is a test, bypass the availability checks
+          if($callType == 'apiTest') { 
+            $result = $soap->__soapCall("doSQLSomething", array(
+                  'user' => ($username),
+                  'pass' => ($password),
+                  'sql'  => $sql_or_argumentdata,
+            ));
+          }
+          else {
+           
+            // Only attempt an API call if Sonis is available (API calls are turned on)
+            if($availability == 'on') { 
+              // Check the start and end time of the last Sonis API call
+              $start = variable_get('sonisweb_integration_call_start', $default = 0);
+              $end = variable_get('sonisweb_integration_call_end', $default = 0);
 
-          // Only attempt an API call if Sonis is available (API calls are turned on)
-          if($availability == 'on') { 
-            // Check the start and end time of the last Sonis API call
-            $start = variable_get('sonisweb_integration_call_start', $default = 0);
-            $end = variable_get('sonisweb_integration_call_end', $default = 0);
-
-            if($callType != 'apiTest') {
               if($end - $start >= 30){
                 // The last call took more than 30 seconds, check if Sonis is down
                 _sonisweb_integration_check_availability();
               }
+
+              variable_set('sonisweb_integration_call_start', time());
+
+              $result = $soap->__soapCall("doAPISomething", array(
+                'user' => ($callType == 'apiTest' ? $username : variable_get('sonisweb_integration_admin_user', '')),
+                'pass' => ($callType == 'apiTest' ? $password : variable_get('sonisweb_integration_admin_password', '')),
+                'comp' => $component,
+                'meth' => $method,
+                'hasReturnVariable' => $hasReturnVariable,
+                'argumentdata' => $sql_or_argumentdata,
+              ));
+
+              // Sonis call ended, update the end time 
+              variable_set('sonisweb_integration_call_end', time());
             }
+            else if($availability == 'down') {
+              $lastCheck = variable_get('sonisweb_integration_last_availability_check', $default = 0);
 
-            variable_set('sonisweb_integration_call_start', time());
-
-            $result = $soap->__soapCall("doAPISomething", array(
-              'user' => ($callType == 'apiTest' ? $username : variable_get('sonisweb_integration_admin_user', '')),
-              'pass' => ($callType == 'apiTest' ? $password : variable_get('sonisweb_integration_admin_password', '')),
-              'comp' => $component,
-              'meth' => $method,
-              'hasReturnVariable' => $hasReturnVariable,
-              'argumentdata' => $sql_or_argumentdata,
-            ));
-
-            // Sonis call ended, update the end time 
-            variable_set('sonisweb_integration_call_end', time());
-          }
-          else if($availability == 'down') {
-            $lastCheck = variable_get('sonisweb_integration_last_availability_check', $default = 0);
-
-            // If it's been more than 15 minutes since the last time Sonis availability was checked, check again
-            if ($lastCheck - time() > 15) {
-              _sonisweb_integration_check_availability();
+              // If it's been more than 5 minutes since the last time Sonis availability was checked, check again
+              if ($lastCheck - time() > 5) {
+                _sonisweb_integration_check_availability();
+              }
             }
-            else {
-              return array('error' => t('API is down'));  
-            }
-          }
-          else {
-            return array('error' => t('API is off'));
           }
         }
       }
@@ -565,74 +578,75 @@ function _sonisweb_integration_make_soap_call($use_cached = TRUE, $callType, $sq
           $soap = _sonisweb_integration_setup_soap('sql');
         }
         if ($soap) {
-          $availability = variable_get('sonisweb_integration_availability');
+          // If call type is a test, bypass the availability checks
+          if($callType == 'sqlTest') { 
+            $result = $soap->__soapCall("doSQLSomething", array(
+                  'user' => ($username),
+                  'pass' => ($password),
+                  'sql'  => $sql_or_argumentdata,
+            ));
+          }
+          else {
+            $availability = variable_get('sonisweb_integration_availability');
 
-          // Only attempt an API call if Sonis is available (API calls are turned on)
-          if($availability == 'on') { 
+            // Only attempt an API call if Sonis is available (API calls are turned on)
+            if($availability == 'on') { 
 
-            // Check the start and end time of the last Sonis API call
-            $start = variable_get('sonisweb_integration_call_start', $default = 0);
-            $end = variable_get('sonisweb_integration_call_end', $default = 0);
+              // Check the start and end time of the last Sonis API call
+              $start = variable_get('sonisweb_integration_call_start', $default = 0);
+              $end = variable_get('sonisweb_integration_call_end', $default = 0);
 
-            if($callType != 'sqlTest') {
               if($end - $start >= 30){
                 // The last call took more than 30 seconds, check if Sonis is down
                 _sonisweb_integration_check_availability();
               }
-            }
-            
-            variable_set('sonisweb_integration_call_start', time());
+              
+              variable_set('sonisweb_integration_call_start', time());
 
-            $result = $soap->__soapCall("doSQLSomething", array(
-              'user' => ($callType == 'sqlTest' ? $username : variable_get('sonisweb_integration_admin_user', '')),
-              'pass' => ($callType == 'sqlTest' ? $password : variable_get('sonisweb_integration_admin_password', '')),
-              'sql' => $sql_or_argumentdata,
-            ));
+              $result = $soap->__soapCall("doSQLSomething", array(
+                'user' => ($callType == 'sqlTest' ? $username : variable_get('sonisweb_integration_admin_user', '')),
+                'pass' => ($callType == 'sqlTest' ? $password : variable_get('sonisweb_integration_admin_password', '')),
+                'sql' => $sql_or_argumentdata,
+              ));
 
-            // Sonis call ended, update the end time 
-            variable_set('sonisweb_integration_call_end', time());
-          }
-          else if($availability == 'down') {
-            $lastCheck = variable_get('sonisweb_integration_last_availability_check', $default = 0);
+              // Sonis call ended, update the end time 
+              variable_set('sonisweb_integration_call_end', time());
+            }
+            else if($availability == 'down') {
+              $lastCheck = variable_get('sonisweb_integration_last_availability_check', $default = 0);
 
-            // If it's been more than 15 minutes since the last time Sonis availability was checked, check again
-            if ($lastCheck - time() > 15) {
-              _sonisweb_integration_check_availability();
+              // If it's been more than 5 minutes since the last time Sonis availability was checked, check again
+              if ($lastCheck - time() > 5) {
+                _sonisweb_integration_check_availability();
+              }
             }
-            else {
-              return array('error' => t('API is down'));
-            }
-          }
-          else {
-            return array('error' => t('API is off'));
           }
         }
       }
       else {
         return array('error' => t('Bad arguments passed'));
       }
+
       if ($callType == 'apiTest' || $callType == 'sqlTest') {
         //Cache returned value
-        if ($cache_len_in_seconds > 0) {
+        if ($cache_len_in_seconds > 0)
           $cache_values[$index] = $result;
-        }
-        if ($cache_len_in_seconds > 1) {
-          cache_set($index, $result, 'cache_sonisweb_integration', REQUEST_TIME + $cache_len_in_seconds);
-        }
+        if ($cache_len_in_seconds > 1)
+          cache_set($index, $result, 'cache_sonisweb_integration', time() + $cache_len_in_seconds);
         return ($result);
       }
       elseif ($cache_len_in_seconds > 0) {
         //Cache returned value
         $cache_values[$index] = _sonisweb_integration_to_array($result);
-        if ($cache_len_in_seconds > 1) {
-          cache_set($index, $cache_values[$index], 'cache_sonisweb_integration', REQUEST_TIME + $cache_len_in_seconds);
-        }
+        if ($cache_len_in_seconds > 1)
+          cache_set($index, $cache_values[$index], 'cache_sonisweb_integration', time() + $cache_len_in_seconds);
         return ($cache_values[$index]);
       }
       else {
         $tmp = _sonisweb_integration_to_array($result);
         return ($tmp);
       }
+      
     }
     catch (Exception $e) {
       return array('error' => t('A connection error has occurred'));
@@ -655,7 +669,6 @@ function _sonisweb_integration_check_availability() {
   $c = curl_init();
   curl_setopt($c, CURLOPT_URL, $base_url . "/admin/config/sonisweb_integration/check_availability"); 
   curl_setopt($c, CURLOPT_HEADER, false);         
-  curl_setopt($c, CURLOPT_NOBODY, true);         
   curl_setopt($c, CURLOPT_RETURNTRANSFER, true);  
   curl_setopt($c, CURLOPT_FRESH_CONNECT, true);  
 
@@ -666,6 +679,8 @@ function _sonisweb_integration_check_availability() {
 
   if($result){
     variable_set('sonisweb_integration_availability', 'on');
+    // Flush all caches to make sure users get data
+    cache_clear_all(NULL, "cache_sonisweb_integration");
     return TRUE;
   }
   else { // Availability check timed out, Sonis is down
