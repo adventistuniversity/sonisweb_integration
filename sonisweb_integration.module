@@ -89,7 +89,7 @@ function sonisweb_integration_admin_settings($form, $form_state) {
   $form['sonisweb_integration_availability'] = array(
     '#type' => 'select',
     '#title' => t('Sonis availability'),
-    '#default_value' => variable_get('sonisweb_integration_availability'),
+    '#default_value' => variable_get('sonisweb_integration_availability', 'on'),
     '#options' => array(
       'on'   => t('On'),
       'down' => t('Down'),
@@ -482,7 +482,8 @@ function _sonisweb_integration_setup_soap($call_type, $turl = '') {
 
   try {
     //Get a handle to the webservice
-    $client = new SoapClient($url . "?wsdl", array("features" => SOAP_SINGLE_ELEMENT_ARRAYS, "connection_timeout" => 5));
+    $client = new SoapClient($url . "?wsdl", array("features" => SOAP_SINGLE_ELEMENT_ARRAYS, 
+                                                   "connection_timeout" => 5));
   }
   catch (Exception $e) {
     watchdog('sonisweb_integration', 'Error establishing SOAP connection (%error)', array('%error' => $e));
@@ -497,7 +498,7 @@ function _sonisweb_integration_setup_soap($call_type, $turl = '') {
 function _sonisweb_integration_make_soap_call($use_cached = TRUE, $callType, $sql_or_argumentdata, $component = '', $method = '', $hasReturnVariable = '', $url = '', $username = '', $password = '') {
 
   $cache_len_in_seconds = variable_get('sonisweb_integration_caching_length', '0');
-  $availability = variable_get('sonisweb_integration_availability');
+  $availability = variable_get('sonisweb_integration_availability', 'on');
 
   //If caching is turned on load cached values
   if ($cache_len_in_seconds > 0) {
@@ -587,7 +588,7 @@ function _sonisweb_integration_make_soap_call($use_cached = TRUE, $callType, $sq
             ));
           }
           else {
-            $availability = variable_get('sonisweb_integration_availability');
+            $availability = variable_get('sonisweb_integration_availability', 'on');
 
             // Only attempt an API call if Sonis is available (API calls are turned on)
             if($availability == 'on') { 
