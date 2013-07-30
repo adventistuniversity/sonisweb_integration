@@ -99,6 +99,13 @@ function sonisweb_integration_admin_settings($form, $form_state) {
     '#description' => t('<p>The Sonis availability will be set to Down if an API call times out after 60 seconds. The module will continue to check every 15 minutes if Sonis is back up. If Sonis will be down for an extended period (for example. if updates are being made), the module should be set to Off and will remain off until an administrator manually turns it back on again. No API calls will be made when set to Down or Off.</p>'),
   );
 
+  $form['sonisweb_integration_availability_error_message'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Custom error message when Sonis is down'),
+    '#default_value' => variable_get('sonisweb_integration_availability_error_message', ''),
+    '#description' => t("Provide a custom error message to display when Sonis is not available."),
+  );
+
   $form['sonisweb_integration_soap_base_url'] = array(
     '#type' => 'textfield',
     '#title' => t('Base URL'),
@@ -186,6 +193,10 @@ function sonisweb_integration_admin_settings_submit($form, &$form_state) {
   if (isset($form_state['values']['sonisweb_integration_admin_user']) && $form_state['values']['sonisweb_integration_admin_user'] != "" &&
       isset($form_state['values']['sonisweb_integration_admin_password']) && $form_state['values']['sonisweb_integration_admin_password'] != "") {
     variable_set('sonisweb_integration_admin_password', $form_state['values']['sonisweb_integration_admin_password']);
+  }
+
+  if(isset($form_state['values']['sonisweb_integration_availability_error_message'])) {
+    variable_set('sonisweb_integration_availability_error_message', $form_state['values']['sonisweb_integration_availability_error_message']);
   }
 
   drupal_set_message(t('Settings saved.'));
@@ -439,6 +450,7 @@ function _sonisweb_integration_test($type, $url, $user, $pass) {
                                                    array('multi_select', 'no'),
                                                    array('hide', 'no'),
                                                    array('hide_excludes', 'no')), "CFC.drp_box", "program", "no", $url, $user, $pass);
+    
     if (stripos($result, 'name="prg_cod"') === FALSE) {
       return FALSE;
     }
