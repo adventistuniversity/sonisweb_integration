@@ -558,6 +558,12 @@ function _sonisweb_integration_make_soap_call($use_cached = TRUE, $callType, $sq
                 _sonisweb_integration_check_availability();
               }
 
+              $sessiondata = array();
+              if(array_key_exists('session_variables', $sql_or_argumentdata)) {
+                $sessiondata = $sql_or_argumentdata['session_variables'];
+                unset($sql_or_argumentdata['session_variables']);
+              }
+
               variable_set('sonisweb_integration_call_start', time());
 
               $result = $soap->__soapCall("doAPISomething", array(
@@ -567,7 +573,8 @@ function _sonisweb_integration_make_soap_call($use_cached = TRUE, $callType, $sq
                 'meth' => $method,
                 'hasReturnVariable' => $hasReturnVariable,
                 'argumentdata' => $sql_or_argumentdata,
-              ));
+                'sessiondata' => $sessiondata,
+                ));
 
               // Sonis call ended, update the end time 
               variable_set('sonisweb_integration_call_end', time());
