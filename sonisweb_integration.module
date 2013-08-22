@@ -38,7 +38,7 @@ function sonisweb_integration_menu() {
     'page callback' => 'check_availability',
     'file' => 'sonisweb_integration.availability.inc',
     'file path' => drupal_get_path('module', 'sonisweb_integration'),
-    'type' => MENU_NORMAL_ITEM,
+    'type' => MENU_CALLBACK,
   );
 
   return $items;
@@ -104,6 +104,13 @@ function sonisweb_integration_admin_settings($form, $form_state) {
     '#title' => t('Custom error message when Sonis is down'),
     '#default_value' => variable_get('sonisweb_integration_availability_error_message', ''),
     '#description' => t("Provide a custom error message to display when Sonis is not available."),
+  );
+
+  $form['sonisweb_integration_availability_email_addresses'] = array(
+    '#type' => 'textfield',
+    '#title' => t('E-mail alerts'),
+    '#default_value' => variable_get('sonisweb_integration_availability_email_addresses', ''),
+    '#description' => t("A comma separated list of e-mail addresses to be notified when Sonis is detected as unavailable."),
   );
 
   $form['sonisweb_integration_soap_base_url'] = array(
@@ -197,6 +204,10 @@ function sonisweb_integration_admin_settings_submit($form, &$form_state) {
 
   if(isset($form_state['values']['sonisweb_integration_availability_error_message'])) {
     variable_set('sonisweb_integration_availability_error_message', $form_state['values']['sonisweb_integration_availability_error_message']);
+  }
+
+  if(isset($form_state['values']['sonisweb_integration_availability_email_addresses'])) {
+    variable_set('sonisweb_integration_availability_email_addresses', $form_state['values']['sonisweb_integration_availability_email_addresses']);
   }
 
   drupal_set_message(t('Settings saved.'));
@@ -686,16 +697,20 @@ function _sonisweb_integration_check_availability() {
   variable_set('sonisweb_integration_last_availability_check', time());
 
   // Using CURL calls here so we don't block everything
-  $c = curl_init();
-  curl_setopt($c, CURLOPT_URL, $base_url . "/admin/config/sonisweb_integration/check_availability"); 
-  curl_setopt($c, CURLOPT_HEADER, false);         
-  curl_setopt($c, CURLOPT_RETURNTRANSFER, true);  
-  curl_setopt($c, CURLOPT_FRESH_CONNECT, true);  
+  $ch = curl_init();
+  curl_setopt($ch, CURLOPT_URL, $base_url . "/admin/config/sonisweb_integration/check_availability"); 
+  curl_setopt($ch, CURLOPT_HEADER, false);          
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);  
+  curl_setopt($ch, CURLOPT_FRESH_CONNECT, true);  
+  curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+  curl_setopt($ch, CURLOPT_SSLVERSION, 3);
+  curl_setopt($ch, CURLOPT_TIMEOUT, 30);
 
-  // Timeout default to 30 seconds
-  curl_setopt($c, CURLOPT_TIMEOUT, 30);
-
-  $result = curl_exec($c);
+  if (curl_exec($ch) === FALSE) {
+    die("Curl Failed: " . curl_error($ch));
+  } else {
+    $result = curl_exec($ch);
+  }
 
   if($result){
     variable_set('sonisweb_integration_availability', 'on');
@@ -703,7 +718,8 @@ function _sonisweb_integration_check_availability() {
     cache_clear_all(NULL, "cache_sonisweb_integration");
     return TRUE;
   }
-  else { // Availability check timed out, Sonis is down
+  else { 
+    // Availability check timed out, Sonis is down
     variable_set('sonisweb_integration_availability', 'down');
     return FALSE;
   }
