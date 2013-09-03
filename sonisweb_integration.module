@@ -57,6 +57,22 @@ function sonisweb_integration_permission() {
 }
 
 /**
+ * Implementation of hook_init()
+ *
+ * This is where the error message to display when Sonis is down is initialized
+ */
+function sonisweb_integration_init() 
+{
+  $availability = variable_get('sonisweb_integration_availability', 'on');
+  $availabilityError = variable_get('sonisweb_integration_availability_error_message', '');
+
+  if (($availability == 'down' || $availability == 'off') && $availabilityError != '') {
+    // Set a site wide error message on all pages if Sonis is down
+    drupal_set_message(t($availabilityError), 'warning');
+  }
+}
+
+/**
  * Provides admin settings pages.
  */
 function sonisweb_integration_admin_settings($form, $form_state) {
