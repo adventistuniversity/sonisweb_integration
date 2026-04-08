@@ -176,6 +176,13 @@ function sonisweb_integration_flush_caches() {
  * Validates values submitted to admin settings pages.
  */
 function sonisweb_integration_admin_settings_validate($form, &$form_state) {
+  $base_url = trim($form_state['values']['sonisweb_integration_soap_base_url']);
+
+  if (!_sonisweb_integration_url_is_https($base_url)) {
+    form_set_error('sonisweb_integration_soap_base_url', t('The Base URL must use HTTPS.'));
+    return;
+  }
+
   //Require a password only if one is not stored.
   if (variable_get('sonisweb_integration_admin_password', '') == "" &&
       (!isset($form_state['values']['sonisweb_integration_admin_password']) ||
@@ -187,7 +194,7 @@ function sonisweb_integration_admin_settings_validate($form, &$form_state) {
     $pass = $form_state['values']['sonisweb_integration_admin_password'];
   }
 
-  if (!_sonisweb_integration_test('api', $form_state['values']['sonisweb_integration_soap_base_url'], $form_state['values']['sonisweb_integration_admin_user'], $pass) || !_sonisweb_integration_test('api', $form_state['values']['sonisweb_integration_soap_base_url'], $form_state['values']['sonisweb_integration_admin_user'], $pass)) {
+  if (!_sonisweb_integration_test('api', $base_url, $form_state['values']['sonisweb_integration_admin_user'], $pass) || !_sonisweb_integration_test('api', $base_url, $form_state['values']['sonisweb_integration_admin_user'], $pass)) {
       form_set_error('sonisweb_integration_soap_base_url', t('The Base URL provided is not functioning.  (Is the account enabled and the Base URL correct?)'));
   }
 
@@ -534,6 +541,14 @@ function _sonisweb_integration_setup_soap($call_type, $turl = '') {
 /**
  * Private function.  Do not use!
  */
+function _sonisweb_integration_url_is_https($url) {
+  $parts = @parse_url(trim($url));
+  return isset($parts['scheme']) && strtolower($parts['scheme']) == 'https';
+}
+
+/**
+ * Private function.  Do not use!
+ */
 function _sonisweb_integration_make_soap_call($use_cached = TRUE, $callType, $sql_or_argumentdata, $component = '', $method = '', $hasReturnVariable = '', $url = '', $username = '', $password = '') {
 
   $cache_len_in_seconds = variable_get('sonisweb_integration_caching_length', '0');
@@ -555,6 +570,12 @@ function _sonisweb_integration_make_soap_call($use_cached = TRUE, $callType, $sq
   }
   //If not cached or caching disabled make the call.
   if ($cache_len_in_seconds == 0 || !isset($cache_values[$index]) || !$use_cached) {
+    if (($callType == 'api' || $callType == 'sql') &&
+        !_sonisweb_integration_url_is_https(variable_get('sonisweb_integration_soap_base_url', ''))) {
+      watchdog('sonisweb_integration', 'Blocked %call_type call because SONISWEB Integration Base URL is not secure. Administrator username and password cannot be sent unencrypted.', array('%call_type' => strtoupper($callType)), WATCHDOG_ERROR);
+      return array('error' => t('SONISWEB Integration Base URL must use HTTPS before authenticated calls can run.'));
+    }
+
     try {
       if ($callType == 'api' || $callType == 'apiTest') {
         if ($callType == 'apiTest') {

@@ -73,7 +73,7 @@ This functionality should only be used sparingly.
 ## Configuration
 
 1. Goto Administer / Site Configuration / SONISWEB Integration Settings
-2. Enter the Base URL to the SONISWEB SOAP functionality.
+2. Enter the Base URL to the SONISWEB SOAP functionality (HTTPS is mandatory).
 3. Enter the SONISWEB Administrator Username that your site will use.
 4. Enter the password associated with the SONISWEB Administrator Username.
 5. Click Save Settings
